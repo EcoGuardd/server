@@ -58,3 +58,45 @@ export const calculateSpecificImpact = async (req, res, next) => {
         next(error);
     }
 };
+// @desc    Calculate reforestation growth and CO₂ impact
+// @route   POST /api/impact/growth
+export const calculateGrowthImpact = async (req, res, next) => {
+    try {
+        const { areaHectares, region, monthsElapsed } = req.body;
+
+        if (!areaHectares || !monthsElapsed) {
+            return res.status(400).json({ success: false, error: 'areaHectares and monthsElapsed are required' });
+        }
+
+        const treesPlanted = areaHectares * 1000;
+        const survivalRate = 0.85;
+        const activeTrees = Math.round(treesPlanted * survivalRate);
+        const co2AbsorbedKg = Math.round(activeTrees * 21 * (monthsElapsed / 12));
+        const growthPct = Math.min((monthsElapsed / 24) * 100, 100);
+
+        // Build monthly projection for chart (1 to monthsElapsed)
+        const monthlyData = [];
+        for (let m = 1; m <= Math.min(monthsElapsed, 24); m++) {
+            monthlyData.push({
+                month: m,
+                co2Kg: Math.round(activeTrees * 21 * (m / 12)),
+                growthPct: Math.min((m / 24) * 100, 100),
+            });
+        }
+
+        res.status(200).json({
+            success: true,
+            data: {
+                treesPlanted,
+                activeTrees,
+                co2AbsorbedKg,
+                areaRestored: Number(areaHectares),
+                growthPct: Number(growthPct.toFixed(1)),
+                region: region || 'Global',
+                monthlyData,
+            }
+        });
+    } catch (error) {
+        next(error);
+    }
+};
