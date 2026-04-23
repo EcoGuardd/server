@@ -7,17 +7,22 @@ import aiService from '../services/aiService.js';
 // @route   POST /api/reforestation/suggest
 export const suggestReforestation = async (req, res, next) => {
     try {
-        const { soilType, climate, region, areaToRestore } = req.body;
+        const { soilType, climate, region, regionName, country, areaToRestore } = req.body;
 
         let searchSoil = soilType;
         let searchClimate = climate;
+        let finalRegionName = regionName;
+        let finalCountry = country;
+        let regionData = null;
 
         // Fetch from region if ID provided
         if (region) {
-            const regionData = await Region.findById(region);
+            regionData = await Region.findById(region);
             if (regionData) {
                 searchSoil = searchSoil || regionData.soilType;
                 searchClimate = searchClimate || regionData.climate;
+                finalRegionName = finalRegionName || regionData.name;
+                finalCountry = finalCountry || regionData.country;
             }
         }
 
@@ -33,7 +38,14 @@ export const suggestReforestation = async (req, res, next) => {
         let optimalTreesPerHectare = 200; // Default fallback
 
         try {
-            const prompt = `Generate a JSON object containing reforestation data for a ${searchClimate} climate with ${searchSoil} soil. 
+            const prompt = `Generate a JSON object containing reforestation data for ${finalRegionName ? `the region "${finalRegionName}"` : 'a site'} ${finalCountry ? `in ${finalCountry}` : ''} with a ${searchClimate} climate and ${searchSoil} soil. 
+            
+            CRITICAL REQUIREMENTS for tree selection:
+            1. The trees MUST be NATIVE to this specific geographical area.
+            2. They MUST be EASY TO FIND locally (widely available in nurseries or common in the wild).
+            3. They MUST be WELL-KNOWN by the local people in that area.
+            4. They MUST be highly resilient and suitable for the ${searchSoil} soil and ${searchClimate} climate.
+            
             The JSON MUST strictly follow this exact format:
             {
               "optimalTreesPerHectare": 250, // Number representing optimal planting density per hectare based on this specific climate
@@ -44,13 +56,13 @@ export const suggestReforestation = async (req, res, next) => {
                   "survivalRate": 85, // Number between 50 and 95
                   "co2AbsorptionPerTree": 20, // Number representing kg of CO2 absorbed per year
                   "growthTimeYears": 10, // Number of years to mature
-                  "description": "Short 1 sentence reason why it fits this climate."
+                  "description": "Short 1 sentence reason why it fits this local ecosystem and its availability."
                 }
               ]
             }
             Generate exactly 3 trees in the array. Do not include any markdown formatting like \`\`\`json. Return ONLY the raw JSON object.`;
 
-            const aiResponse = await aiService.generateResponse(prompt);
+            const aiResponse = await aiService.generateResponse(prompt, { regionData: regionData || { name: finalRegionName, country: finalCountry, soilType: searchSoil, climate: searchClimate } });
             
             // Attempt to parse the AI's JSON response
             const cleanedResponse = aiResponse.replace(/```json/g, '').replace(/```/g, '').trim();
@@ -116,12 +128,11 @@ export const suggestReforestation = async (req, res, next) => {
                 treesRequired,
                 estimatedSurvivalRate: Number(estimatedSurvivalRate.toFixed(1)),
                 cumulativeCO2: Number(cumulativeCO2.toFixed(2)),
-                searchContext: { soil: searchSoil, climate: searchClimate, area: areaToRestore }
+                searchContext: { soil: searchSoil, climate: searchClimate, area: areaToRestore, region: finalRegionName, country: finalCountry }
             }
         });
 
     } catch (error) {
-
         next(error);
     }
 };
